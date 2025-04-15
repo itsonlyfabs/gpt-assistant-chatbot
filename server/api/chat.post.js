@@ -1,52 +1,93 @@
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
-  const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY); // backend key
+  const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY);
   const body = await readBody(event);
-  const userEmail = body.email; // frontend must send logged-in user email
+  const userEmail = body.email;
   const userMessage = body.message;
+  const now = new Date();
 
-  // Step 1: Fetch user from DB
+  // 1. Check last chat time
   const { data: user, error } = await supabase
     .from('users')
     .select('*')
     .eq('email', userEmail)
     .single();
 
-  const now = new Date();
-
   if (user) {
     const lastChat = new Date(user.last_chat_time);
     const diffHours = (now.getTime() - lastChat.getTime()) / (1000 * 60 * 60);
-
     if (diffHours < 24) {
-      return { error: 'Session completed. Please come back in 24h.' }
+      return { message: 'Session completed. Please come back in 24h.' };
     }
   }
 
-  // Step 2: Chat with Assistant using OpenAI
-
-  const res = await fetch('https://api.openai.com/v1/completions', {
+  // 2. Create new thread
+  const threadRes = await fetch('https://api.openai.com/v1/threads', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.OPENAI_API_KEY}`
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+      'OpenAI-Beta': 'assistants=v1'
+    }
+  });
+  const thread = await threadRes.json();
+
+  // 3. Add message to thread
+  await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+      'OpenAI-Beta': 'assistants=v1'
     },
     body: JSON.stringify({
-      model: 'text-davinci-003',
-      prompt: userMessage,
-      temperature: 0.9,
-      max_tokens: 512,
-      top_p: 1.0,
-      frequency_penalty: 0,
-      presence_penalty: 0.6,
-      stop: ['User:', 'AI:']
+      role: 'user',
+      content: userMessage
     })
   });
 
-  const result = await res.json();
-  const assistantMessage = result.choices[0].text.trim();
+  // 4. Run assistant
+  const runRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+      'OpenAI-Beta': 'assistants=v1'
+    },
+    body: JSON.stringify({
+      assistant_id: config.OPENAI_ASSISTANT_ID
+    })
+  });
+  const run = await runRes.json();
 
-  // Step 3: Update last chat time
+  // 5. Poll run status
+  let status = run.status;
+  let finalMessage = null;
+
+  while (status === 'queued' || status === 'in_progress') {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const checkRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`, {
+      headers: {
+        Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+        'OpenAI-Beta': 'assistants=v1'
+      }
+    });
+    const statusData = await checkRes.json();
+    status = statusData.status;
+  }
+
+  if (status === 'completed') {
+    const msgRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+      headers: {
+        Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+        'OpenAI-Beta': 'assistants=v1'
+      }
+    });
+    const messages = await msgRes.json();
+    finalMessage = messages.data.find((m) => m.role === 'assistant')?.content[0]?.text?.value || 'No response.';
+  }
+
+  // 6. Save chat time
   if (user) {
     await supabase
       .from('users')
@@ -58,7 +99,5 @@ export default defineEventHandler(async (event) => {
       .insert({ email: userEmail, last_chat_time: now.toISOString() });
   }
 
-  return {
-    message: assistantMessage
-  };
+  return { message: finalMessage };
 });

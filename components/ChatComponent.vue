@@ -62,6 +62,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { supabase } from '@/utils/supabaseClient'
 
 const messages = ref([
   {
@@ -72,6 +73,16 @@ const messages = ref([
 
 const loading = ref(false)
 const message = ref('')
+const userEmail = ref('')
+
+// Get user email when component loads
+const { data: { user } } = await supabase.auth.getUser()
+if (user?.email) {
+  userEmail.value = user.email
+} else {
+  alert('User not logged in. Please log in again.')
+  window.location.href = '/'
+}
 
 const scrollToEnd = () => {
   setTimeout(() => {
@@ -90,18 +101,23 @@ const sendPrompt = async () => {
   })
 
   scrollToEnd()
+  const userMessageCopy = message.value
   message.value = ''
 
   const res = await fetch(`/api/chat`, {
-    body: JSON.stringify(messages.value.slice(1)),
-    method: 'post'
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: userEmail.value,
+    message: message.value
   })
+});
 
   if (res.status === 200) {
     const response = await res.json()
     messages.value.push({
       role: 'AI',
-      message: response?.message
+      message: response?.message || 'No response.'
     })
   } else {
     messages.value.push({
