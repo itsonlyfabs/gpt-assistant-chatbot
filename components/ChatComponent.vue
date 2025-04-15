@@ -46,28 +46,31 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { supabase } from '@/utils/supabaseClient'
 
 const messages = ref([
-  {
-    role: 'AI',
-    message: 'Hello! How can I help you?'
-  }
+  { role: 'AI', message: 'Hello! How can I help you?' }
 ])
 
 const loading = ref(false)
 const message = ref('')
 const userEmail = ref('')
 
-// Fetch logged-in user's email
-const { data: { user } } = await supabase.auth.getUser()
-if (user?.email) {
-  userEmail.value = user.email
-} else {
-  alert('User not logged in. Please log in again.')
-  window.location.href = '/'
-}
+onMounted(async () => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user?.email) {
+    if (process.client) {
+      alert('User not logged in. Please log in again.')
+      window.location.href = '/'
+    } else {
+      console.warn('User not logged in - skipped alert (SSR).')
+    }
+  } else {
+    userEmail.value = user.email
+  }
+})
+
 
 const scrollToEnd = () => {
   setTimeout(() => {
