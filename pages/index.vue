@@ -21,6 +21,6 @@ const loginWithGoogle = async () => {
       redirectTo: `${window.location.origin}/chat`
     }
   });
-  if (error) console.error('Login error:', error)
-}
+  if (error) console.error('Login error:', error.message);
+};
 </script>

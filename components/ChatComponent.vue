@@ -59,18 +59,16 @@ const userEmail = ref('')
 
 onMounted(async () => {
   const { data: { user } } = await supabase.auth.getUser()
+
   if (!user?.email) {
     if (process.client) {
-      alert('User not logged in. Please log in again.')
+      console.warn('User not logged in. Redirecting to home.')
       window.location.href = '/'
-    } else {
-      console.warn('User not logged in - skipped alert (SSR).')
     }
   } else {
     userEmail.value = user.email
   }
 })
-
 
 const scrollToEnd = () => {
   setTimeout(() => {
