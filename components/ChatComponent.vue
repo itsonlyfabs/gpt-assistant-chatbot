@@ -2,23 +2,28 @@ const sendPrompt = async () => {
   if (message.value === '') return
   loading.value = true
 
+  const userMessageCopy = message.value
+
   messages.value.push({
     role: 'User',
-    message: message.value
+    message: userMessageCopy
   })
 
   scrollToEnd()
-  const userMessageCopy = message.value
   message.value = ''
+
+  const payload = {
+    email: userEmail.value,
+    message: userMessageCopy
+  }
+
+  console.log('📤 Sending to /api/chat:', payload)
 
   const res = await fetch(`/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: userEmail.value,
-      message: userMessageCopy
-    })
-  });
+    body: JSON.stringify(payload)
+  })
 
   const response = await res.json()
   console.log('🔍 Chat API Response:', response)
