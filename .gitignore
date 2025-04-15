@@ -9,4 +9,5 @@ dist
 .env.local.txts
 .vercel
 .env.local
+.env.txt.env.local
 .env.txt
