@@ -4,11 +4,13 @@
 
 <script setup>
 import { supabase } from '@/utils/supabaseClient'
-import ChatComponent from '@/components/ChatComponent.vue'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 const { data: { user } } = await supabase.auth.getUser()
 
 if (!user) {
-  navigateTo('/') // redirect to login
+  router.push('/') // redirect to login if not logged in
 }
 </script>
