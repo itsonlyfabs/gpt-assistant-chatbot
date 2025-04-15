@@ -3,18 +3,21 @@ export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig();
     const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY);
     const body = await readBody(event);
+
+    console.log('🟢 Request Body:', body);
+
     const userEmail = body.email;
     const userMessage = body.message;
     const now = new Date();
 
-    console.log('📥 Incoming Chat Request:', { email: userEmail, message: userMessage });
-
-    // 1. Check last chat time
+    // Step 1: Get user from DB
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
       .eq('email', userEmail)
       .single();
+
+    console.log('👤 Supabase user:', user, 'Error:', error);
 
     if (user) {
       const lastChat = new Date(user.last_chat_time);
@@ -24,7 +27,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // 2. Create new thread
+    // Step 2: Create a new thread
     const threadRes = await fetch('https://api.openai.com/v1/threads', {
       method: 'POST',
       headers: {
@@ -33,11 +36,14 @@ export default defineEventHandler(async (event) => {
         'OpenAI-Beta': 'assistants=v1'
       }
     });
-    const thread = await threadRes.json();
-    console.log('🧵 Thread Created:', thread);
 
-    // 3. Add message to thread
-    await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+    const thread = await threadRes.json();
+    console.log('🧵 Thread created:', thread);
+
+    if (!thread.id) throw new Error('Failed to create thread');
+
+    // Step 3: Add message to thread
+    const messageRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -50,7 +56,9 @@ export default defineEventHandler(async (event) => {
       })
     });
 
-    // 4. Run assistant
+    console.log('✉️ Message sent to thread');
+
+    // Step 4: Start assistant run
     const runRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
       method: 'POST',
       headers: {
@@ -62,13 +70,13 @@ export default defineEventHandler(async (event) => {
         assistant_id: config.OPENAI_ASSISTANT_ID
       })
     });
+
     const run = await runRes.json();
-    console.log('🏃 Assistant Run Started:', run);
+    console.log('🏃 Run started:', run);
 
-    // 5. Poll run status
+    if (!run.id) throw new Error('Failed to start assistant run');
+
     let status = run.status;
-    let finalMessage = null;
-
     while (status === 'queued' || status === 'in_progress') {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       const checkRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`, {
@@ -81,6 +89,8 @@ export default defineEventHandler(async (event) => {
       status = statusData.status;
     }
 
+    console.log('✅ Final Run Status:', status);
+
     if (status === 'completed') {
       const msgRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
         headers: {
@@ -89,29 +99,26 @@ export default defineEventHandler(async (event) => {
         }
       });
       const messages = await msgRes.json();
-      console.log('💬 Assistant Messages:', messages);
+      const finalMessage = messages.data.find((m) => m.role === 'assistant')?.content?.[0]?.text?.value || 'No response.';
 
-      finalMessage = messages.data.find((m) => m.role === 'assistant')?.content[0]?.text?.value || 'No response.';
+      // Save last_chat_time
+      if (user) {
+        await supabase
+          .from('users')
+          .update({ last_chat_time: now.toISOString() })
+          .eq('email', userEmail);
+      } else {
+        await supabase
+          .from('users')
+          .insert({ email: userEmail, last_chat_time: now.toISOString() });
+      }
+
+      return { message: finalMessage };
     } else {
-      console.log('❌ Assistant Run Failed:', status);
+      throw new Error('Assistant run failed.');
     }
-
-    // 6. Save chat time
-    if (user) {
-      await supabase
-        .from('users')
-        .update({ last_chat_time: now.toISOString() })
-        .eq('email', userEmail);
-    } else {
-      await supabase
-        .from('users')
-        .insert({ email: userEmail, last_chat_time: now.toISOString() });
-    }
-
-    return { message: finalMessage || 'No assistant response.' };
-
-  } catch (error) {
-    console.error('🔥 Chat API Error:', error);
-    return { message: 'Sorry, an internal server error occurred.' };
+  } catch (err) {
+    console.error('❌ Server Error:', err);
+    return { message: 'Internal Server Error' };
   }
 });
