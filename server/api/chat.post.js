@@ -38,57 +38,59 @@ export default defineEventHandler(async (event) => {
 
     if (fetchError) console.warn('⚠️ Supabase fetch user error:', fetchError);
 
-    if (user) {
+    let threadId = user?.thread_id;
+    let resetThread = false;
+
+    if (user?.last_chat_time) {
       const lastChat = new Date(user.last_chat_time);
       const diffHours = (now.getTime() - lastChat.getTime()) / (1000 * 60 * 60);
-      if (diffHours < 24) {
-        return { message: 'Session completed. Please come back in 24h.' };
+      if (diffHours >= 24) {
+        resetThread = true;
       }
     }
 
-    // 1. Create thread
-    const threadRes = await fetch('https://api.openai.com/v1/threads', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'assistants=v2'
-      }
-    });
+    // 1. Create new thread if none exists or it's been more than 24h
+    if (!threadId || resetThread) {
+      const threadRes = await fetch('https://api.openai.com/v1/threads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+          'OpenAI-Beta': 'assistants=v2'
+        }
+      });
 
-    const thread = await threadRes.json();
-    console.log('🧵 Thread created:', thread.id);
+      const thread = await threadRes.json();
+      console.log('🧵 Thread created:', thread.id);
 
-    if (!thread.id) throw new Error('Failed to create OpenAI thread');
+      if (!thread.id) throw new Error('Failed to create OpenAI thread');
+
+      threadId = thread.id;
+    }
 
     // 2. Add message
-    const messageAddRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+    const messageAddRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.OPENAI_API_KEY}`,
         'OpenAI-Beta': 'assistants=v2'
       },
-      body: JSON.stringify({
-        role: 'user',
-        content: userMessage
-      })
+      body: JSON.stringify({ role: 'user', content: userMessage })
     });
 
-    const messageAdd = await messageAddRes.json();
+    await messageAddRes.json();
     console.log('✉️ Message added to thread');
 
     // 3. Run assistant
-    const runRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
+    const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.OPENAI_API_KEY}`,
         'OpenAI-Beta': 'assistants=v2'
       },
-      body: JSON.stringify({
-        assistant_id: config.OPENAI_ASSISTANT_ID
-      })
+      body: JSON.stringify({ assistant_id: config.OPENAI_ASSISTANT_ID })
     });
 
     const run = await runRes.json();
@@ -99,7 +101,7 @@ export default defineEventHandler(async (event) => {
 
     while (['queued', 'in_progress'].includes(status)) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const statusRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`, {
+      const statusRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${run.id}`, {
         headers: {
           Authorization: `Bearer ${config.OPENAI_API_KEY}`,
           'OpenAI-Beta': 'assistants=v2'
@@ -110,9 +112,8 @@ export default defineEventHandler(async (event) => {
       console.log('📡 Run status:', status);
     }
 
-    // 4. Get final response
     if (status === 'completed') {
-      const msgRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+      const msgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
         headers: {
           Authorization: `Bearer ${config.OPENAI_API_KEY}`,
           'OpenAI-Beta': 'assistants=v2'
@@ -123,22 +124,24 @@ export default defineEventHandler(async (event) => {
       const assistantMsg = messages.data.find((m) => m.role === 'assistant');
       finalMessage = assistantMsg?.content?.[0]?.text?.value || 'No response.';
       console.log('✅ Assistant message received');
+
+      // 4. Save conversation to Supabase
+      await supabase.from('conversations').insert({
+        email: userEmail,
+        thread_id: threadId,
+        user_message: userMessage,
+        assistant_message: finalMessage,
+        timestamp: now.toISOString()
+      });
     } else {
       console.error('❌ Assistant run failed or cancelled');
       finalMessage = 'Sorry, assistant could not complete the request.';
     }
 
-    // 5. Update last chat time
-    if (user) {
-      await supabase
-        .from('users')
-        .update({ last_chat_time: now.toISOString() })
-        .eq('email', userEmail);
-    } else {
-      await supabase
-        .from('users')
-        .insert({ email: userEmail, last_chat_time: now.toISOString() });
-    }
+    // 5. Update user chat info
+    await supabase
+      .from('users')
+      .upsert({ email: userEmail, last_chat_time: now.toISOString(), thread_id: threadId }, { onConflict: 'email' });
 
     return { message: finalMessage };
 
