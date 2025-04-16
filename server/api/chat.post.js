@@ -143,7 +143,14 @@ export default defineEventHandler(async (event) => {
       .from('users')
       .upsert({ email: userEmail, last_chat_time: now.toISOString(), thread_id: threadId }, { onConflict: 'email' });
 
-    return { message: finalMessage };
+    // 6. Fetch full conversation history
+    const { data: history } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('email', userEmail)
+      .order('timestamp', { ascending: true });
+
+    return { message: finalMessage, history };
 
   } catch (err) {
     console.error('❌ Uncaught Chat API Error:', err);
