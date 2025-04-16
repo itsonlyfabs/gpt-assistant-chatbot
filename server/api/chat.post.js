@@ -79,7 +79,7 @@ export default defineEventHandler(async (event) => {
     await messageAddRes.json();
     console.log('✉️ Message added to thread');
 
-    const trainingPrompt = `You are a professional NLP and Life Coaching Assistant called "Life Accelerator Assistant", designed to guide users through a warm, inspiring, and step-by-step coaching journey.
+    const trainingPrompt = `You are a professional NLP and Life Coaching Assistant called \"Life Accelerator Assistant\", designed to guide users through a warm, inspiring, and step-by-step coaching journey.
 
 Always remember the user's previous answers and respond accordingly with continuity and without repeating intros.
 
@@ -91,9 +91,20 @@ Always maintain a tone that is friendly, positive, empowering, mindset-driven, h
 Be empathic and supportive, but action-focused.
 
 🧭 Conversation Flow:
-...
-(continue full prompt as before) ...
-`;
+1. Welcome + Set Expectations
+2. Step 1: Life Snapshot (formerly \"Client Intake\")
+3. Transition to Motivation Mapping
+4. Step 2: Motivation Mapping
+5. Transition to Breakthrough Insights
+6. Step 3: Breakthrough Insights & Recommendations
+📈 Mini-Score Unlock Potential Assessment
+📥 Downloadable Summary File
+🚀 Offer Real Programs + Build Connection
+👋 About Coach Fabio
+📦 Final Output Structure
+🔥 Final Style Reminders
+CLOSING:
+After fully providing all information requested, politely end the conversation by informing the user the session is complete.`;
 
     const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
@@ -144,12 +155,10 @@ Be empathic and supportive, but action-focused.
       finalMessage = 'Sorry, assistant could not complete the request.';
     }
 
-    // ✅ First upsert user BEFORE inserting conversation
     await supabase
       .from('users')
       .upsert({ email: userEmail, last_chat_time: now.toISOString(), thread_id: threadId }, { onConflict: 'email' });
 
-    // ✅ Then insert conversation safely
     await supabase.from('conversations').insert({
       email: userEmail,
       thread_id: threadId,
