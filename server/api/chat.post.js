@@ -139,22 +139,24 @@ Be empathic and supportive, but action-focused.
       const assistantMsg = messages.data.find((m) => m.role === 'assistant');
       finalMessage = assistantMsg?.content?.[0]?.text?.value || 'No response.';
       console.log('✅ Assistant message received');
-
-      await supabase.from('conversations').insert({
-        email: userEmail,
-        thread_id: threadId,
-        user_message: userMessage,
-        assistant_message: finalMessage,
-        timestamp: now.toISOString()
-      });
     } else {
       console.error('❌ Assistant run failed or cancelled');
       finalMessage = 'Sorry, assistant could not complete the request.';
     }
 
+    // ✅ First upsert user BEFORE inserting conversation
     await supabase
       .from('users')
       .upsert({ email: userEmail, last_chat_time: now.toISOString(), thread_id: threadId }, { onConflict: 'email' });
+
+    // ✅ Then insert conversation safely
+    await supabase.from('conversations').insert({
+      email: userEmail,
+      thread_id: threadId,
+      user_message: userMessage,
+      assistant_message: finalMessage,
+      timestamp: now.toISOString()
+    });
 
     const { data: history } = await supabase
       .from('conversations')
