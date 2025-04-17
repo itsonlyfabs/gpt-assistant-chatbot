@@ -2,7 +2,7 @@
   <div class="max-w-xl mx-auto text-black">
     <h1 class="my-8 text-4xl font-bold text-center">AI Chatbot</h1>
     <div class="bg-white rounded-md shadow h-[70vh] flex flex-col justify-between">
-      <div class="h-full overflow-auto chat-messages">
+      <div class="h-full overflow-auto chat-messages" ref="messagesContainer">
         <div v-for="(message, i) in messages" :key="i" class="flex flex-col p-4">
           <div v-if="message.role === 'AI'" class="pr-8 mr-auto">
             <div class="p-2 mt-1 text-sm text-gray-700 bg-gray-200 rounded-lg">
@@ -18,6 +18,9 @@
         <div v-if="loading" class="p-4 text-center">
           <span class="loader"></span>
         </div>
+        <div v-if="error" class="p-4 text-center text-red-500">
+          {{ error }}
+        </div>
       </div>
 
       <form @submit.prevent="sendPrompt" class="flex items-center p-4">
@@ -26,11 +29,13 @@
           type="text"
           placeholder="Type your message..."
           class="w-full p-2 text-sm border rounded-md"
+          :disabled="loading"
         />
         <button
           :disabled="loading"
           type="submit"
           class="flex items-center justify-center w-10 h-10 ml-2 bg-green-500 rounded-full"
+          :class="{ 'opacity-50': loading }"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
                xmlns="http://www.w3.org/2000/svg">
@@ -46,7 +51,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { supabase } from '@/utils/supabaseClient'
 
 const messages = ref([
@@ -56,29 +61,48 @@ const messages = ref([
 const loading = ref(false)
 const message = ref('')
 const userEmail = ref('')
+const error = ref('')
+const messagesContainer = ref(null)
 
 onMounted(async () => {
-  const { data: { user } } = await supabase.auth.getUser()
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user?.email) {
-    if (process.client) {
+    if (!user?.email) {
       console.warn('User not logged in. Redirecting to home.')
-      window.location.href = '/'
-    }
-  } else {
+      if (process.client) {
+        window.location.href = '/'
+      }
+      return
+    } 
+    
+    console.log(`User authenticated: ${user.email}`)
     userEmail.value = user.email
+  } catch (e) {
+    console.error('Authentication error:', e)
+    error.value = 'Authentication error. Please try logging in again.'
   }
 })
 
+// Watch for message changes to scroll to bottom
+watch(messages, () => {
+  nextTick(scrollToEnd)
+}, { deep: true })
+
 const scrollToEnd = () => {
-  setTimeout(() => {
-    const chatMessages = document.querySelector('.chat-messages > div:last-child')
-    chatMessages?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, 100)
+  if (!messagesContainer.value) return
+  
+  messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
 }
 
 const sendPrompt = async () => {
   if (message.value === '') return
+  if (!userEmail.value) {
+    error.value = 'You must be logged in to chat.'
+    return
+  }
+  
+  error.value = '' // Clear previous errors
   loading.value = true
 
   messages.value.push({
@@ -86,7 +110,6 @@ const sendPrompt = async () => {
     message: message.value
   })
 
-  scrollToEnd()
   const userMessageCopy = message.value
   message.value = ''
 
@@ -106,20 +129,14 @@ const sendPrompt = async () => {
     } catch (jsonErr) {
       const errorText = await res.text()
       console.error('❌ Failed to parse JSON:', errorText)
-      messages.value.push({
-        role: 'AI',
-        message: 'Unexpected error occurred.'
-      })
+      error.value = 'Server returned invalid response format.'
       loading.value = false
       return
     }
 
     if (!res.ok) {
       console.error('❌ Chat API failed:', response)
-      messages.value.push({
-        role: 'AI',
-        message: 'Unexpected error occurred.'
-      })
+      error.value = response?.statusMessage || 'Server error. Please try again.'
       loading.value = false
       return
     }
@@ -131,16 +148,11 @@ const sendPrompt = async () => {
 
   } catch (e) {
     console.error('❌ Chat error (outer catch):', e)
-    messages.value.push({
-      role: 'AI',
-      message: 'Unexpected error occurred.'
-    })
+    error.value = 'Network error. Please check your connection and try again.'
   }
 
   loading.value = false
-  scrollToEnd()
 }
-
 </script>
 
 <style scoped>
