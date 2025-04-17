@@ -23,14 +23,20 @@ export default defineEventHandler(async (event) => {
     let threadId = null;
     let resetThread = false;
 
-    const { data: user, error: userError } = await supabase
+    const { data: users, error: userFetchError } = await supabase
       .from('users')
       .select('*')
-      .eq('email', userEmail)
-      .single();
+      .eq('email', userEmail);
 
-    if (userError) {
-      console.error("❌ Supabase user fetch error:", userError.message);
+    if (userFetchError) {
+      console.error("❌ Supabase user fetch error:", userFetchError.message);
+    }
+
+    let user = null;
+    if (users?.length === 1) {
+      user = users[0];
+    } else {
+      console.log("ℹ️ No existing user found or multiple users returned — will upsert below.");
     }
 
     if (user) {
