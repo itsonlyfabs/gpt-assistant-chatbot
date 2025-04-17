@@ -100,23 +100,37 @@ const sendPrompt = async () => {
       })
     })
 
-    const response = await res.json()
-    console.log('🧠 OpenAI response:', response)
-
-    if (res.status === 200) {
+    let response
+    try {
+      response = await res.json()
+    } catch (jsonErr) {
+      const errorText = await res.text()
+      console.error('❌ Failed to parse JSON:', errorText)
       messages.value.push({
         role: 'AI',
-        message: response?.message || 'No response.'
+        message: 'Unexpected error occurred.'
       })
-    } else {
-      messages.value.push({
-        role: 'AI',
-        message: 'Sorry, an error occurred.'
-      })
+      loading.value = false
+      return
     }
 
+    if (!res.ok) {
+      console.error('❌ Chat API failed:', response)
+      messages.value.push({
+        role: 'AI',
+        message: 'Unexpected error occurred.'
+      })
+      loading.value = false
+      return
+    }
+
+    messages.value.push({
+      role: 'AI',
+      message: response?.message || 'No response.'
+    })
+
   } catch (e) {
-    console.error('❌ Chat error:', e)
+    console.error('❌ Chat error (outer catch):', e)
     messages.value.push({
       role: 'AI',
       message: 'Unexpected error occurred.'
@@ -126,6 +140,7 @@ const sendPrompt = async () => {
   loading.value = false
   scrollToEnd()
 }
+
 </script>
 
 <style scoped>
