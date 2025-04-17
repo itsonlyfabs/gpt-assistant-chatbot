@@ -1,18 +1,3 @@
-console.log("💥 chat.post.js triggered");
-
-try {
-  const body = await readBody(event);
-  console.log("📨 Body received:", body);
-
-  const config = useRuntimeConfig();
-  console.log("🔧 Loaded config:", {
-    hasAPIKey: !!config.OPENAI_API_KEY,
-    hasSupabase: !!config.SUPABASE_URL && !!config.SUPABASE_SERVICE_KEY,
-    hasAssistant: !!config.OPENAI_ASSISTANT_ID,
-  });
-} catch (e) {
-  console.error("❌ Early failure parsing event body or config:", e);
-}
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
