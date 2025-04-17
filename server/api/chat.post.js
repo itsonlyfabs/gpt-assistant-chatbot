@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   if (!config.OPENAI_API_KEY || !config.SUPABASE_URL || !config.SUPABASE_SERVICE_KEY || !config.OPENAI_ASSISTANT_ID) {
     throw createError({
       statusCode: 500,
-      statusMessage: '❌ Missing required environment variables.'
+      statusMessage: '❌ Missing required environment variables (check .env and Vercel settings)'
     });
   }
 
@@ -23,11 +23,15 @@ export default defineEventHandler(async (event) => {
     let threadId = null;
     let resetThread = false;
 
-    const { data: user } = await supabase
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('*')
       .eq('email', userEmail)
       .single();
+
+    if (userError) {
+      console.error("❌ Supabase user fetch error:", userError.message);
+    }
 
     if (user) {
       threadId = user.thread_id;
@@ -45,12 +49,15 @@ export default defineEventHandler(async (event) => {
           'OpenAI-Beta': 'assistants=v2'
         }
       });
+      if (!threadRes.ok) {
+        const errorText = await threadRes.text();
+        console.error("❌ Thread creation failed:", errorText);
+        throw createError({ statusCode: 500, statusMessage: errorText });
+      }
       const threadData = await threadRes.json();
-      if (!threadData.id) throw new Error('Failed to create thread');
       threadId = threadData.id;
     }
 
-    // Inject history for context
     const { data: history } = await supabase
       .from('conversations')
       .select('*')
@@ -58,32 +65,26 @@ export default defineEventHandler(async (event) => {
       .order('timestamp', { ascending: true });
 
     for (const entry of history) {
-      if (entry.user_message) {
-        await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${config.OPENAI_API_KEY}`,
-            'OpenAI-Beta': 'assistants=v2'
-          },
-          body: JSON.stringify({ role: 'user', content: entry.user_message })
-        });
-      }
-      if (entry.assistant_message) {
-        await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${config.OPENAI_API_KEY}`,
-            'OpenAI-Beta': 'assistants=v2'
-          },
-          body: JSON.stringify({ role: 'assistant', content: entry.assistant_message })
-        });
+      for (const [role, content] of [['user', entry.user_message], ['assistant', entry.assistant_message]]) {
+        if (content) {
+          const msgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+              'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({ role, content })
+          });
+          if (!msgRes.ok) {
+            const errorText = await msgRes.text();
+            console.error(`❌ Failed to inject ${role} message:`, errorText);
+          }
+        }
       }
     }
 
-    // Add the latest user message
-    await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+    const userMsgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +94,12 @@ export default defineEventHandler(async (event) => {
       body: JSON.stringify({ role: 'user', content: userMessage })
     });
 
-    // Trigger run using the assistant ID
+    if (!userMsgRes.ok) {
+      const err = await userMsgRes.text();
+      console.error("❌ Failed to add user message:", err);
+      throw createError({ statusCode: 500, statusMessage: err });
+    }
+
     const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
       headers: {
@@ -106,12 +112,13 @@ export default defineEventHandler(async (event) => {
       })
     });
 
-    const run = await runRes.json();
     if (!runRes.ok) {
-      console.error("❌ OpenAI Run Error:", run);
-      throw createError({ statusCode: runRes.status, statusMessage: run?.error?.message || 'Run creation failed' });
+      const runErr = await runRes.text();
+      console.error("❌ Failed to start run:", runErr);
+      throw createError({ statusCode: 500, statusMessage: runErr });
     }
 
+    const run = await runRes.json();
     let status = run.status;
 
     while (['queued', 'in_progress'].includes(status)) {
@@ -160,7 +167,7 @@ export default defineEventHandler(async (event) => {
 
     return { message: finalMessage, history: updatedHistory };
   } catch (err) {
-    console.error('❌ Chat error:', err);
+    console.error('❌ Chat error (outer catch):', err);
     throw createError({ statusCode: 500, statusMessage: err.message || 'Internal error' });
   }
 });
