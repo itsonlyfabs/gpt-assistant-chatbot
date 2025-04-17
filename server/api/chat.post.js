@@ -50,6 +50,7 @@ export default defineEventHandler(async (event) => {
       threadId = threadData.id;
     }
 
+    // Inject history for context
     const { data: history } = await supabase
       .from('conversations')
       .select('*')
@@ -81,6 +82,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    // Add the latest user message
     await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: 'POST',
       headers: {
@@ -91,6 +93,7 @@ export default defineEventHandler(async (event) => {
       body: JSON.stringify({ role: 'user', content: userMessage })
     });
 
+    // Trigger run using the assistant ID
     const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
       headers: {
@@ -104,6 +107,11 @@ export default defineEventHandler(async (event) => {
     });
 
     const run = await runRes.json();
+    if (!runRes.ok) {
+      console.error("❌ OpenAI Run Error:", run);
+      throw createError({ statusCode: runRes.status, statusMessage: run?.error?.message || 'Run creation failed' });
+    }
+
     let status = run.status;
 
     while (['queued', 'in_progress'].includes(status)) {
