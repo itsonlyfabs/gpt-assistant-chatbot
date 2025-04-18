@@ -1,7 +1,7 @@
 <template>
-  <div class="flex flex-col items-center justify-center min-h-screen py-20 text-center">
+  <div class="flex flex-col items-center justify-center min-h-screen py-20 text-center bg-gradient-to-b from-[#3f4c6b] to-[#606c88]">
     <div class="mb-16">
-      <h1 class="text-7xl font-bold mb-8 text-white">Welcome!/h1>
+      <h1 class="text-7xl font-bold mb-8 text-white">Life<br>Accelerator</h1>
       <p class="text-lg max-w-md mx-auto opacity-80 mb-16 text-zinc-200">Get instant guidance and clarity for your life's challenges</p>
       <button
         @click="loginWithGoogle"
@@ -26,10 +26,3 @@ const loginWithGoogle = async () => {
   if (error) console.error('Login error:', error.message);
 };
 </script>
-
-<style scoped>
-/* Add gradient background similar to screenshot */
-div {
-  background: linear-gradient(to bottom, #3f4c6b, #606c88);
-}
-</style>
