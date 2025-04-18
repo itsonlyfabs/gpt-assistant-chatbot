@@ -80,11 +80,12 @@ export default defineEventHandler(async (event) => {
         });
         
         if (!threadRes.ok) {
-          const errorText = await threadRes.text();
-          console.error("❌ Thread creation failed:", errorText);
+          const errorData = await threadRes.json().catch(() => null) || await threadRes.text().catch(() => 'Unknown error');
+          const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : errorData;
+          console.error("❌ Thread creation failed:", errorMessage);
           throw createError({ 
             statusCode: threadRes.status, 
-            statusMessage: `OpenAI thread creation failed: ${errorText}` 
+            statusMessage: `OpenAI thread creation failed: ${errorMessage}` 
           });
         }
         
@@ -102,49 +103,71 @@ export default defineEventHandler(async (event) => {
 
     // Add user message to thread
     console.log(`Adding user message to thread ${threadId}`);
-    const userMsgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      body: JSON.stringify({ role: 'user', content: userMessage })
-    });
+    let userMsgRes;
+    try {
+      userMsgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
+          'OpenAI-Beta': 'assistants=v2'
+        },
+        body: JSON.stringify({ role: 'user', content: userMessage })
+      });
 
-    if (!userMsgRes.ok) {
-      const err = await userMsgRes.text();
-      console.error("❌ Failed to add user message:", err);
+      if (!userMsgRes.ok) {
+        const errorData = await userMsgRes.json().catch(() => null) || await userMsgRes.text().catch(() => 'Unknown error');
+        const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : errorData;
+        console.error("❌ Failed to add user message:", errorMessage);
+        throw createError({ 
+          statusCode: userMsgRes.status, 
+          statusMessage: `Failed to add message to thread: ${errorMessage}` 
+        });
+      }
+    } catch (err) {
+      console.error("❌ Message addition error:", err);
       throw createError({ 
-        statusCode: userMsgRes.status, 
-        statusMessage: `Failed to add message to thread: ${err}` 
+        statusCode: 500, 
+        statusMessage: `Error adding message: ${err.message}` 
       });
     }
 
     // Run the assistant
     console.log(`Starting assistant run with ID: ${config.OPENAI_ASSISTANT_ID}`);
-    const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      body: JSON.stringify({
-        assistant_id: config.OPENAI_ASSISTANT_ID
-      })
-    });
+    let runRes;
+    let run;
+    try {
+      runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
+          'OpenAI-Beta': 'assistants=v2'
+        },
+        body: JSON.stringify({
+          assistant_id: config.OPENAI_ASSISTANT_ID
+        })
+      });
 
-    if (!runRes.ok) {
-      const runErr = await runRes.text();
-      console.error("❌ Failed to start run:", runErr);
+      if (!runRes.ok) {
+        const errorData = await runRes.json().catch(() => null) || await runRes.text().catch(() => 'Unknown error');
+        const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : errorData;
+        console.error("❌ Failed to start run:", errorMessage);
+        throw createError({ 
+          statusCode: runRes.status, 
+          statusMessage: `Failed to start assistant run: ${errorMessage}` 
+        });
+      }
+
+      run = await runRes.json();
+    } catch (err) {
+      console.error("❌ Run creation error:", err);
       throw createError({ 
-        statusCode: runRes.status, 
-        statusMessage: `Failed to start assistant run: ${runErr}` 
+        statusCode: 500, 
+        statusMessage: `Error creating run: ${err.message}` 
       });
     }
 
-    const run = await runRes.json();
     let status = run.status;
     console.log(`Run started with status: ${status}`);
 
@@ -153,25 +176,32 @@ export default defineEventHandler(async (event) => {
     const maxAttempts = 30; // Prevent infinite loops
     
     while (['queued', 'in_progress'].includes(status) && attempts < maxAttempts) {
-      console.log(`Run status: ${status}, waiting...`);
+      console.log(`Run status: ${status}, waiting... (attempt ${attempts + 1}/${maxAttempts})`);
       await new Promise((r) => setTimeout(r, 1500));
       attempts++;
       
-      const checkRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${run.id}`, {
-        headers: {
-          'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2'
+      let checkRes;
+      try {
+        checkRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${run.id}`, {
+          headers: {
+            'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
+            'OpenAI-Beta': 'assistants=v2'
+          }
+        });
+        
+        if (!checkRes.ok) {
+          const errorData = await checkRes.json().catch(() => null) || await checkRes.text().catch(() => 'Unknown error');
+          const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : errorData;
+          console.error(`❌ Failed to check run status: ${errorMessage}`);
+          continue;
         }
-      });
-      
-      if (!checkRes.ok) {
-        const checkErr = await checkRes.text();
-        console.error(`❌ Failed to check run status: ${checkErr}`);
+        
+        const runStatus = await checkRes.json();
+        status = runStatus.status;
+      } catch (err) {
+        console.error(`❌ Error checking run status: ${err.message}`);
         continue;
       }
-      
-      const runStatus = await checkRes.json();
-      status = runStatus.status;
     }
 
     console.log(`Final run status: ${status}`);
@@ -179,61 +209,81 @@ export default defineEventHandler(async (event) => {
 
     if (status === 'completed') {
       console.log(`Getting messages from thread ${threadId}`);
-      const msgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-        headers: {
-          'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2'
-        }
-      });
-      
-      if (!msgRes.ok) {
-        const msgErr = await msgRes.text();
-        console.error(`❌ Failed to get messages: ${msgErr}`);
-      } else {
-        const messages = await msgRes.json();
-        // Find most recent assistant message
-        const assistantResponse = messages.data.find((m) => m.role === 'assistant');
+      let msgRes;
+      try {
+        msgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+          headers: {
+            'Authorization': `Bearer ${config.OPENAI_API_KEY}`,
+            'OpenAI-Beta': 'assistants=v2'
+          }
+        });
         
-        if (assistantResponse?.content?.[0]?.text?.value) {
-          finalMessage = assistantResponse.content[0].text.value;
-          console.log(`Got assistant response: ${finalMessage.substring(0, 50)}...`);
+        if (!msgRes.ok) {
+          const errorData = await msgRes.json().catch(() => null) || await msgRes.text().catch(() => 'Unknown error');
+          const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : errorData;
+          console.error(`❌ Failed to get messages: ${errorMessage}`);
         } else {
-          console.error("❌ No assistant response content found in:", assistantResponse);
+          const messages = await msgRes.json();
+          // Find most recent assistant message
+          const assistantResponse = messages.data.find((m) => m.role === 'assistant');
+          
+          if (assistantResponse?.content?.[0]?.text?.value) {
+            finalMessage = assistantResponse.content[0].text.value;
+            console.log(`Got assistant response: ${finalMessage.substring(0, 50)}...`);
+          } else {
+            console.error("❌ No assistant response content found in:", assistantResponse);
+          }
         }
+      } catch (err) {
+        console.error(`❌ Error getting messages: ${err.message}`);
       }
-    } else {
-      console.error(`❌ Run did not complete successfully. Final status: ${status}`);
+    } else if (status === 'failed') {
+      console.error(`❌ Run failed. Reason: ${run.last_error?.message || 'Unknown error'}`);
+      finalMessage = "I'm sorry, I encountered an issue processing your request. Please try again later.";
+    } else if (attempts >= maxAttempts) {
+      console.error(`❌ Run timed out after ${maxAttempts} polling attempts.`);
+      finalMessage = "I'm sorry, the request is taking longer than expected. Please try again later.";
     }
 
     // Update or create user record
     console.log(`Upserting user record for ${userEmail}`);
-    const { data: upsertData, error: upsertError } = await supabase
-      .from('users')
-      .upsert({ 
-        email: userEmail, 
-        last_chat_time: now.toISOString(), 
-        thread_id: threadId 
-      }, { 
-        onConflict: 'email',
-        returning: 'minimal'
-      });
+    try {
+      const { error: upsertError } = await supabase
+        .from('users')
+        .upsert({ 
+          email: userEmail, 
+          last_chat_time: now.toISOString(), 
+          thread_id: threadId 
+        }, { 
+          onConflict: 'email',
+          returning: 'minimal'
+        });
 
-    if (upsertError) {
-      console.error("❌ Failed to upsert user:", upsertError);
+      if (upsertError) {
+        console.error("❌ Failed to upsert user:", upsertError);
+      }
+    } catch (err) {
+      console.error("❌ Error upserting user:", err.message);
+      // Don't throw error here, continue with the flow
     }
 
     // Store conversation
     console.log("Storing conversation in database");
-    const { data: convData, error: convError } = await supabase.from('conversations').insert({
-      email: userEmail,
-      thread_id: threadId,
-      user_message: userMessage,
-      assistant_message: finalMessage,
-      timestamp: now.toISOString()
-    });
+    try {
+      const { error: convError } = await supabase.from('conversations').insert({
+        email: userEmail,
+        thread_id: threadId,
+        user_message: userMessage,
+        assistant_message: finalMessage,
+        timestamp: now.toISOString()
+      });
 
-    if (convError) {
-      console.error("❌ Failed to insert conversation:", convError);
+      if (convError) {
+        console.error("❌ Failed to insert conversation:", convError);
+      }
+    } catch (err) {
+      console.error("❌ Error storing conversation:", err.message);
+      // Don't throw error here, continue with the flow
     }
 
     return { 

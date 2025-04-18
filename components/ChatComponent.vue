@@ -4,13 +4,16 @@
     <div class="bg-white rounded-md shadow h-[70vh] flex flex-col justify-between">
       <div class="h-full overflow-auto chat-messages" ref="messagesContainer">
         <div v-for="(message, i) in messages" :key="i" class="flex flex-col p-4">
-          <div v-if="message.role === 'AI'" class="pr-8 mr-auto">
-            <div class="p-2 mt-1 text-sm text-gray-700 bg-gray-200 rounded-lg">
-              {{ message.message }}
+          <!-- AI Messages with improved styling -->
+          <div v-if="message.role === 'AI'" class="pr-8 mr-auto max-w-3/4">
+            <div class="p-4 mt-1 text-sm text-gray-700 bg-gray-100 rounded-lg shadow-sm">
+              <!-- Format AI message with paragraphs and spacing -->
+              <div v-html="formatMessage(message.message)" class="whitespace-pre-line"></div>
             </div>
           </div>
-          <div v-else class="pl-8 ml-auto">
-            <div class="p-2 mt-1 text-sm text-white bg-blue-400 rounded-lg">
+          <!-- User Messages -->
+          <div v-else class="pl-8 ml-auto max-w-3/4">
+            <div class="p-4 mt-1 text-sm text-white bg-blue-500 rounded-lg shadow-sm">
               {{ message.message }}
             </div>
           </div>
@@ -23,18 +26,18 @@
         </div>
       </div>
 
-      <form @submit.prevent="sendPrompt" class="flex items-center p-4">
+      <form @submit.prevent="sendPrompt" class="flex items-center p-4 border-t">
         <input
           v-model="message"
           type="text"
           placeholder="Type your message..."
-          class="w-full p-2 text-sm border rounded-md"
+          class="w-full p-3 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-green-300"
           :disabled="loading"
         />
         <button
           :disabled="loading"
           type="submit"
-          class="flex items-center justify-center w-10 h-10 ml-2 bg-green-500 rounded-full"
+          class="flex items-center justify-center w-12 h-12 ml-2 bg-green-500 rounded-full hover:bg-green-600 transition"
           :class="{ 'opacity-50': loading }"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
@@ -55,7 +58,7 @@ import { ref, onMounted, watch, nextTick } from 'vue'
 import { supabase } from '@/utils/supabaseClient'
 
 const messages = ref([
-  { role: 'AI', message: 'Hello! How can I help you?' }
+  { role: 'AI', message: 'Hello! How can I help you today?' }
 ])
 
 const loading = ref(false)
@@ -95,6 +98,23 @@ const scrollToEnd = () => {
   messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
 }
 
+// Format message with better styling
+const formatMessage = (text) => {
+  // Add paragraph breaks and styling
+  const formattedText = text
+    .replace(/\n\n/g, '</p><p class="mt-3">') // Double line breaks become paragraphs
+    .replace(/\n/g, '<br>') // Single line breaks become <br>
+    
+  // Add number formatting for lists
+  let processedText = formattedText
+  // Format numbered lists (1. 2. etc)
+  if (processedText.match(/(\d+\.\s)/g)) {
+    processedText = processedText.replace(/(\d+\.\s)([^\n<]+)/g, '<strong>$1</strong>$2')
+  }
+  
+  return `<p>${processedText}</p>`
+}
+
 const sendPrompt = async () => {
   if (message.value === '') return
   if (!userEmail.value) {
@@ -127,8 +147,14 @@ const sendPrompt = async () => {
     try {
       response = await res.json()
     } catch (jsonErr) {
-      const errorText = await res.text()
-      console.error('❌ Failed to parse JSON:', errorText)
+      console.error('❌ Failed to parse JSON:', jsonErr)
+      // Only try to get text if we haven't consumed the body yet
+      try {
+        const errorText = await res.text()
+        console.error('Error text:', errorText)
+      } catch (e) {
+        console.error('Body stream already consumed')
+      }
       error.value = 'Server returned invalid response format.'
       loading.value = false
       return
