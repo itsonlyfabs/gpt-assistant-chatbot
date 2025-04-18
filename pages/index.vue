@@ -1,13 +1,17 @@
 <template>
-  <div class="max-w-xl mx-auto text-center py-20">
-    <h1 class="text-4xl font-bold mb-6">Welcome!</h1>
-    <p class="mb-6 text-gray-600">Login with Google to start your Free Chat Session</p>
-    <button
-      @click="loginWithGoogle"
-      class="px-6 py-3 bg-green-500 text-white rounded-full hover:bg-green-600 transition"
-    >
-      Login with Google
-    </button>
+  <div class="flex flex-col items-center justify-center min-h-screen py-20 text-center">
+    <div class="mb-16">
+      <h2 class="text-pink-300 uppercase tracking-wider mb-4">YOUR RELENTLESS GUIDE</h2>
+      <h1 class="text-7xl font-bold mb-8">Life<br>Accelerator</h1>
+      <p class="text-lg max-w-md mx-auto opacity-80 mb-16">Get instant guidance and clarity for your life's challenges</p>
+      <button
+        @click="loginWithGoogle"
+        class="px-8 py-4 rounded-full bg-gradient-to-r from-indigo-400 to-pink-400 text-white font-medium hover:opacity-90 transition flex items-center justify-center mx-auto"
+      >
+        <span>FREE Chat</span>
+        <span class="ml-2">💬</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -24,3 +28,10 @@ const loginWithGoogle = async () => {
   if (error) console.error('Login error:', error.message);
 };
 </script>
+
+<style scoped>
+/* Add gradient background similar to screenshot */
+div {
+  background: linear-gradient(to bottom, #3f4c6b, #606c88);
+}
+</style>
