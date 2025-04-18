@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-xl mx-auto text-black">
-<h1 class="my-8 text-4xl font-bold text-center">Life Accelerator Assistant</h1>
-<p class="text-center text-white-600 mb-6">Free chat to boost your productivity and clarity</p>
+<h1 class="my-8 text-4xl font-bold text-center text-white">Life Accelerator Assistant</h1>
+    <p class="text-center text-gray-200 mb-6">Free chat to boost your productivity and clarity</p>
     <div class="bg-white rounded-md shadow h-[70vh] flex flex-col justify-between">
       <div class="h-full overflow-auto chat-messages" ref="messagesContainer">
         <div v-for="(message, i) in messages" :key="i" class="flex flex-col p-4">
