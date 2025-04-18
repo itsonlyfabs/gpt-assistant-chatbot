@@ -1,15 +1,13 @@
 <template>
   <div class="flex flex-col items-center justify-center min-h-screen py-20 text-center">
     <div class="mb-16">
-      <h2 class="text-pink-300 uppercase tracking-wider mb-4">YOUR RELENTLESS GUIDE</h2>
-      <h1 class="text-7xl font-bold mb-8">Life<br>Accelerator</h1>
-      <p class="text-lg max-w-md mx-auto opacity-80 mb-16">Get instant guidance and clarity for your life's challenges</p>
+      <h1 class="text-7xl font-bold mb-8 text-white">Welcome!/h1>
+      <p class="text-lg max-w-md mx-auto opacity-80 mb-16 text-zinc-200">Get instant guidance and clarity for your life's challenges</p>
       <button
         @click="loginWithGoogle"
         class="px-8 py-4 rounded-full bg-gradient-to-r from-indigo-400 to-pink-400 text-white font-medium hover:opacity-90 transition flex items-center justify-center mx-auto"
       >
-        <span>FREE Chat</span>
-        <span class="ml-2">💬</span>
+        <span>Login with Google</span>
       </button>
     </div>
   </div>
